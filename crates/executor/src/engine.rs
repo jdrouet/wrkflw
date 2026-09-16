@@ -3854,14 +3854,23 @@ async fn execute_step(ctx: StepExecutionContext<'_>) -> Result<StepResult, Execu
                 // Resolve the shell command to an absolute path, matching the
                 // runner's `WhichUtil.Which(..., require: true, ...)` — this also
                 // makes emulation's absolute-argv direct-exec rule fire universally.
-                match which::which(&argv[0]) {
-                    Ok(resolved) => argv[0] = resolved.to_string_lossy().into_owned(),
-                    Err(_) => {
-                        return Ok(StepResult::new(
-                            step_name,
-                            StepStatus::Failure,
-                            format!("Custom shell '{}' could not be found", argv[0]),
-                        ));
+                // Only for host-side runtimes: under docker/podman the shell has
+                // to exist in the container image, so the container resolves it
+                // through its own PATH and a host lookup would be meaningless.
+                let is_container_runtime = step_env
+                    .get("WRKFLW_RUNTIME_MODE")
+                    .map(|m| m == "docker" || m == "podman")
+                    .unwrap_or(false);
+                if !is_container_runtime {
+                    match which::which(&argv[0]) {
+                        Ok(resolved) => argv[0] = resolved.to_string_lossy().into_owned(),
+                        Err(_) => {
+                            return Ok(StepResult::new(
+                                step_name,
+                                StepStatus::Failure,
+                                format!("Custom shell '{}' could not be found", argv[0]),
+                            ));
+                        }
                     }
                 }
 
